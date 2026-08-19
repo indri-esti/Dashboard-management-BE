@@ -1,13 +1,14 @@
+import os
 import mysql.connector
 
 
 def get_connection():
     return mysql.connector.connect(
-        host="127.0.0.1",
-        port=3306,
-        user="root",
-        password="",
-        database="db_dashboard_management",
+        host=os.getenv("MYSQLHOST", "127.0.0.1"),
+        port=int(os.getenv("MYSQLPORT", "3306")),
+        user=os.getenv("MYSQLUSER", "root"),
+        password=os.getenv("MYSQLPASSWORD", ""),
+        database=os.getenv("MYSQLDATABASE", "db_dashboard_management"),
         connection_timeout=5,
         use_pure=True
     )
@@ -22,7 +23,7 @@ if __name__ == "__main__":
         conn = get_connection()
 
         print("DATABASE BERHASIL TERHUBUNG!", flush=True)
-        print("Database: db_dashboard_management", flush=True)
+        print("Database:", os.getenv("MYSQLDATABASE", "db_dashboard_management"), flush=True)
 
         cursor = conn.cursor()
 
@@ -43,14 +44,14 @@ if __name__ == "__main__":
         print("\nMengecek data USER...", flush=True)
 
         cursor.execute("""
-            SELECT
-                id_user,
-                nama,
-                email,
-                password,
-                status,
-                role_id
-            FROM user
+            SELECT 
+                id_user, 
+                nama, 
+                email, 
+                password, 
+                status, 
+                role_id 
+            FROM user 
         """)
 
         users = cursor.fetchall()
