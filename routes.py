@@ -2,6 +2,8 @@ from resources.health import HealthResource
 
 from resources.role import RoleResource
 
+from resources.kelas import KelasResource, ReactivateKelasResource
+
 from resources.user import UserResource, ReactivateUserResource
 
 from resources.auth import LoginResource, RegisterResource
@@ -14,6 +16,19 @@ def add_routes(app):
     app.add_route("/", HealthResource())
 
     app.add_route("/api/roles", RoleResource())
+
+    # KELAS
+    app.add_route("/api/kelas", KelasResource())
+
+    app.add_route(
+        "/api/kelas/{kelas_id}",
+        KelasResource()
+    )
+
+    app.add_route(
+        "/api/kelas/{kelas_id}/reactivate",
+        ReactivateKelasResource()
+    )
 
     app.add_route("/api/users", UserResource())
 
