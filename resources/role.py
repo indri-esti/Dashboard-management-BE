@@ -3,7 +3,6 @@ from database import get_connection
 
 
 class RoleResource:
-
     def on_get(self, req, resp):
         conn = None
         cursor = None
@@ -30,6 +29,83 @@ class RoleResource:
             }
 
         except Exception as e:
+            resp.status = falcon.HTTP_500
+            resp.media = {
+                "status": "error",
+                "message": str(e)
+            }
+
+        finally:
+            if cursor:
+                cursor.close()
+
+            if conn:
+                conn.close()
+
+    def on_post(self, req, resp):
+        conn = None
+        cursor = None
+
+        try:
+            data = req.media or {}
+
+            nama_role = str(data.get("nama_role", "")).strip()
+            deskripsi = str(data.get("deskripsi", "")).strip()
+
+            if not nama_role:
+                resp.status = falcon.HTTP_400
+                resp.media = {
+                    "status": "error",
+                    "message": "Nama role wajib diisi."
+                }
+                return
+
+            conn = get_connection()
+            cursor = conn.cursor(dictionary=True)
+
+            cursor.execute(
+                """
+                SELECT id_role
+                FROM role
+                WHERE LOWER(nama_role) = LOWER(%s)
+                LIMIT 1
+                """,
+                (nama_role,)
+            )
+
+            if cursor.fetchone():
+                resp.status = falcon.HTTP_409
+                resp.media = {
+                    "status": "error",
+                    "message": "Nama role sudah terdaftar."
+                }
+                return
+
+            cursor.execute(
+                """
+                INSERT INTO role (nama_role, deskripsi)
+                VALUES (%s, %s)
+                """,
+                (nama_role, deskripsi)
+            )
+
+            conn.commit()
+
+            resp.status = falcon.HTTP_201
+            resp.media = {
+                "status": "success",
+                "message": "Role berhasil ditambahkan.",
+                "data": {
+                    "id_role": cursor.lastrowid,
+                    "nama_role": nama_role,
+                    "deskripsi": deskripsi
+                }
+            }
+
+        except Exception as e:
+            if conn:
+                conn.rollback()
+
             resp.status = falcon.HTTP_500
             resp.media = {
                 "status": "error",

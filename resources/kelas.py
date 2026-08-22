@@ -59,6 +59,15 @@ class KelasResource:
 
                 data = cursor.fetchall()
 
+            # MySQL mengembalikan created_at sebagai datetime.
+            # Ubah ke ISO string supaya Falcon dapat mengirim JSON tanpa 500.
+            if isinstance(data, list):
+                for item in data:
+                    if item.get("created_at"):
+                        item["created_at"] = item["created_at"].isoformat()
+            elif data and data.get("created_at"):
+                data["created_at"] = data["created_at"].isoformat()
+
             resp.status = falcon.HTTP_200
             resp.media = {
                 "status": "success",
