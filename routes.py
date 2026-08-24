@@ -17,6 +17,11 @@ def add_routes(app):
 
     app.add_route("/api/roles", RoleResource())
 
+    app.add_route(
+        "/api/roles/{id_role}",
+        RoleResource()
+    )
+
     # KELAS
     app.add_route("/api/kelas", KelasResource())
 

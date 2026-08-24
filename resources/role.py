@@ -118,3 +118,59 @@ class RoleResource:
 
             if conn:
                 conn.close()
+
+    def on_delete(self, req, resp, id_role):
+        conn = None
+        cursor = None
+
+        try:
+            conn = get_connection()
+            cursor = conn.cursor(dictionary=True)
+
+            cursor.execute(
+                """
+                SELECT id_role
+                FROM role
+                WHERE id_role = %s
+                LIMIT 1
+                """,
+                (id_role,)
+            )
+
+            if not cursor.fetchone():
+                resp.status = falcon.HTTP_404
+                resp.media = {
+                    "status": "error",
+                    "message": "Role tidak ditemukan."
+                }
+                return
+
+            cursor.execute(
+                "DELETE FROM role WHERE id_role = %s",
+                (id_role,)
+            )
+
+            conn.commit()
+
+            resp.status = falcon.HTTP_200
+            resp.media = {
+                "status": "success",
+                "message": "Role berhasil dihapus."
+            }
+
+        except Exception as e:
+            if conn:
+                conn.rollback()
+
+            resp.status = falcon.HTTP_500
+            resp.media = {
+                "status": "error",
+                "message": str(e)
+            }
+
+        finally:
+            if cursor:
+                cursor.close()
+
+            if conn:
+                conn.close()
