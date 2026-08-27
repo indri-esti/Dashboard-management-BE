@@ -22,6 +22,13 @@ class RoleResource:
 
             roles = cursor.fetchall()
 
+            # Pastikan id_role selalu dalam bentuk int yang konsisten
+            # saat dikirim ke frontend (menghindari mismatch tipe data
+            # antara int/str/decimal tergantung driver MySQL).
+            for r in roles:
+                if r.get("id_role") is not None:
+                    r["id_role"] = int(r["id_role"])
+
             resp.status = falcon.HTTP_200
             resp.media = {
                 "status": "success",
@@ -29,6 +36,8 @@ class RoleResource:
             }
 
         except Exception as e:
+            print("ERROR GET ROLES:", str(e))
+
             resp.status = falcon.HTTP_500
             resp.media = {
                 "status": "error",
@@ -106,6 +115,8 @@ class RoleResource:
             if conn:
                 conn.rollback()
 
+            print("ERROR CREATE ROLE:", str(e))
+
             resp.status = falcon.HTTP_500
             resp.media = {
                 "status": "error",
@@ -161,6 +172,8 @@ class RoleResource:
         except Exception as e:
             if conn:
                 conn.rollback()
+
+            print("ERROR DELETE ROLE:", str(e))
 
             resp.status = falcon.HTTP_500
             resp.media = {
