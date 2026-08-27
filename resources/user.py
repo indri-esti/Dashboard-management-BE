@@ -275,6 +275,24 @@ class UserResource:
 
                 if role:
                     role_id = role["id_role"]
+            else:
+                # =====================================================
+                # VALIDASI ROLE_ID VALID (hindari FK constraint error)
+                # =====================================================
+                cursor.execute("""
+                    SELECT id_role
+                    FROM role
+                    WHERE id_role = %s
+                    LIMIT 1
+                """, (role_id,))
+
+                if not cursor.fetchone():
+                    resp.status = falcon.HTTP_400
+                    resp.media = {
+                        "status": "error",
+                        "message": "Role tidak ditemukan/tidak valid"
+                    }
+                    return
 
             # =====================================================
             # INSERT USER
@@ -438,6 +456,40 @@ class UserResource:
                 return
 
             # =====================================================
+            # VALIDASI ROLE_ID VALID SEBELUM UPDATE
+            # (ini penyebab error 1452 foreign key constraint fails,
+            #  karena role_id yang dikirim frontend tidak ada di
+            #  tabel `role`. Divalidasi dulu di sini supaya tidak
+            #  jatuh jadi 500 mentah dari MySQL)
+            # =====================================================
+
+            if role_id in (None, "", "null"):
+                resp.status = falcon.HTTP_400
+                resp.media = {
+                    "status": "error",
+                    "message": "Role wajib dipilih"
+                }
+                return
+
+            cursor.execute("""
+                SELECT id_role
+                FROM role
+                WHERE id_role = %s
+                LIMIT 1
+            """, (role_id,))
+
+            if not cursor.fetchone():
+                resp.status = falcon.HTTP_400
+                resp.media = {
+                    "status": "error",
+                    "message": (
+                        "Role tidak ditemukan/tidak valid. "
+                        "Silakan pilih ulang role."
+                    )
+                }
+                return
+
+            # =====================================================
             # UPDATE USER (sekarang termasuk alasan_non_active)
             # =====================================================
 
@@ -482,10 +534,25 @@ class UserResource:
 
             print("ERROR UPDATE USER:", str(e))
 
+            # Tangkap khusus error FK constraint role_id supaya
+            # pesannya jelas ke frontend, bukan 500 generik
+            error_text = str(e)
+
+            if "fk_user_role" in error_text or "foreign key constraint" in error_text.lower():
+                resp.status = falcon.HTTP_400
+                resp.media = {
+                    "status": "error",
+                    "message": (
+                        "Role yang dipilih tidak valid/tidak ditemukan "
+                        "di database. Silakan pilih role lain."
+                    )
+                }
+                return
+
             resp.status = falcon.HTTP_500
             resp.media = {
                 "status": "error",
-                "message": str(e)
+                "message": error_text
             }
 
         finally:
