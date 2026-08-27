@@ -275,10 +275,12 @@ class UserResource:
 
                 if role:
                     role_id = role["id_role"]
+
             else:
                 # =====================================================
-                # VALIDASI ROLE_ID VALID (hindari FK constraint error)
+                # VALIDASI ROLE_ID VALID
                 # =====================================================
+
                 cursor.execute("""
                     SELECT id_role
                     FROM role
@@ -378,18 +380,13 @@ class UserResource:
             email = data.get("email")
             tanggal_lahir = data.get("tanggal_lahir")
             role_id = data.get("role_id")
-            status = (data.get("status") or "active").strip()
+            status = data.get("status")
 
-            alasan_non_active = (
-                data.get("alasan_non_active")
-                or data.get("alasan_nonactive")
-                or data.get("alasanNonActive")
-                or data.get("reason")
-                or ""
-            )
-            alasan_non_active = str(alasan_non_active).strip()
+            # =====================================================
+            # VALIDASI DATA DASAR
+            # =====================================================
 
-            if not nama or not email:
+            if nama is None or email is None:
                 resp.status = falcon.HTTP_400
                 resp.media = {
                     "status": "error",
@@ -397,10 +394,53 @@ class UserResource:
                 }
                 return
 
-            nama = nama.strip()
-            email = email.strip().lower()
+            nama = str(nama).strip()
+            email = str(email).strip().lower()
 
-            # Kalau status non active, alasan wajib diisi
+            if not nama:
+                resp.status = falcon.HTTP_400
+                resp.media = {
+                    "status": "error",
+                    "message": "Nama wajib diisi"
+                }
+                return
+
+            if not email:
+                resp.status = falcon.HTTP_400
+                resp.media = {
+                    "status": "error",
+                    "message": "Email wajib diisi"
+                }
+                return
+
+            # =====================================================
+            # NORMALISASI STATUS
+            # =====================================================
+
+            status = str(status or "active").strip()
+
+            # =====================================================
+            # AMBIL ALASAN NON ACTIVE
+            # =====================================================
+
+            alasan_non_active = (
+                data.get("alasan_non_active")
+                if data.get("alasan_non_active") is not None
+                else data.get("alasan_nonactive")
+                if data.get("alasan_nonactive") is not None
+                else data.get("alasanNonActive")
+                if data.get("alasanNonActive") is not None
+                else data.get("reason")
+                if data.get("reason") is not None
+                else ""
+            )
+
+            alasan_non_active = str(alasan_non_active).strip()
+
+            # =====================================================
+            # VALIDASI STATUS
+            # =====================================================
+
             if status.lower() == "non active" and not alasan_non_active:
                 resp.status = falcon.HTTP_400
                 resp.media = {
@@ -409,9 +449,34 @@ class UserResource:
                 }
                 return
 
-            # Kalau status kembali active, kosongkan alasan
+            # Kalau active, alasan dihapus
             if status.lower() == "active":
                 alasan_non_active = None
+
+            # =====================================================
+            # NORMALISASI TANGGAL
+            # =====================================================
+            # Mendukung:
+            # 18/08/2026
+            # 2026-08-18
+            # =====================================================
+
+            if tanggal_lahir:
+                tanggal_lahir = str(tanggal_lahir).strip()
+
+                if "/" in tanggal_lahir:
+                    bagian_tanggal = tanggal_lahir.split("/")
+
+                    if len(bagian_tanggal) == 3:
+                        hari = bagian_tanggal[0].zfill(2)
+                        bulan = bagian_tanggal[1].zfill(2)
+                        tahun = bagian_tanggal[2]
+
+                        tanggal_lahir = f"{tahun}-{bulan}-{hari}"
+
+            # =====================================================
+            # KONEKSI DATABASE
+            # =====================================================
 
             conn = get_connection()
             cursor = conn.cursor(dictionary=True)
@@ -421,13 +486,24 @@ class UserResource:
             # =====================================================
 
             cursor.execute("""
-                SELECT id_user
+                SELECT
+                    id_user,
+                    email,
+                    nama,
+                    title,
+                    phone,
+                    tanggal_lahir,
+                    role_id,
+                    status,
+                    alasan_non_active
                 FROM `user`
                 WHERE id_user = %s
                 LIMIT 1
             """, (user_id,))
 
-            if not cursor.fetchone():
+            existing_user = cursor.fetchone()
+
+            if not existing_user:
                 resp.status = falcon.HTTP_404
                 resp.media = {
                     "status": "error",
@@ -436,18 +512,23 @@ class UserResource:
                 return
 
             # =====================================================
-            # CEK EMAIL MILIK USER LAIN
+            # CEK EMAIL USER LAIN
+            # =====================================================
+            # Email user yang sedang diedit boleh tetap sama.
+            # Email hanya ditolak jika dipakai user lain.
             # =====================================================
 
             cursor.execute("""
                 SELECT id_user
                 FROM `user`
-                WHERE LOWER(email) = %s
+                WHERE LOWER(TRIM(email)) = %s
                 AND id_user <> %s
                 LIMIT 1
             """, (email, user_id))
 
-            if cursor.fetchone():
+            email_user_lain = cursor.fetchone()
+
+            if email_user_lain:
                 resp.status = falcon.HTTP_409
                 resp.media = {
                     "status": "error",
@@ -456,18 +537,25 @@ class UserResource:
                 return
 
             # =====================================================
-            # VALIDASI ROLE_ID VALID SEBELUM UPDATE
-            # (ini penyebab error 1452 foreign key constraint fails,
-            #  karena role_id yang dikirim frontend tidak ada di
-            #  tabel `role`. Divalidasi dulu di sini supaya tidak
-            #  jatuh jadi 500 mentah dari MySQL)
+            # VALIDASI ROLE
             # =====================================================
 
-            if role_id in (None, "", "null"):
+            if role_id in (None, "", "null", "undefined"):
                 resp.status = falcon.HTTP_400
                 resp.media = {
                     "status": "error",
                     "message": "Role wajib dipilih"
+                }
+                return
+
+            # Konversi role_id string menjadi integer jika memungkinkan
+            try:
+                role_id = int(role_id)
+            except (ValueError, TypeError):
+                resp.status = falcon.HTTP_400
+                resp.media = {
+                    "status": "error",
+                    "message": "Role yang dipilih tidak valid"
                 }
                 return
 
@@ -478,7 +566,9 @@ class UserResource:
                 LIMIT 1
             """, (role_id,))
 
-            if not cursor.fetchone():
+            role = cursor.fetchone()
+
+            if not role:
                 resp.status = falcon.HTTP_400
                 resp.media = {
                     "status": "error",
@@ -490,7 +580,7 @@ class UserResource:
                 return
 
             # =====================================================
-            # UPDATE USER (sekarang termasuk alasan_non_active)
+            # UPDATE USER
             # =====================================================
 
             cursor.execute("""
@@ -517,9 +607,58 @@ class UserResource:
                 user_id
             ))
 
+            # =====================================================
+            # CEK APAKAH DATA BERHASIL DIUPDATE
+            # =====================================================
+
+            if cursor.rowcount == 0:
+                # Bisa terjadi jika data yang dikirim sama persis.
+                # Tetap lanjut karena user memang ada.
+                pass
+
             conn.commit()
 
-            user = self._get_user(user_id)
+            # =====================================================
+            # AMBIL DATA TERBARU SETELAH UPDATE
+            # =====================================================
+
+            cursor.execute("""
+                SELECT
+                    u.id_user,
+                    u.title,
+                    u.nama,
+                    u.phone,
+                    u.email,
+                    u.tanggal_lahir,
+                    u.status,
+                    u.alasan_non_active,
+                    u.role_id,
+                    r.nama_role AS role,
+                    u.created_at
+                FROM `user` u
+                LEFT JOIN role r
+                    ON u.role_id = r.id_role
+                WHERE u.id_user = %s
+                LIMIT 1
+            """, (user_id,))
+
+            user = cursor.fetchone()
+
+            if user:
+                if user.get("created_at"):
+                    user["created_at"] = user["created_at"].isoformat()
+
+                if user.get("tanggal_lahir"):
+                    user["tanggal_lahir"] = self._format_tanggal_lahir(
+                        user["tanggal_lahir"]
+                    )
+
+                if user.get("alasan_non_active") is None:
+                    user["alasan_non_active"] = ""
+                else:
+                    user["alasan_non_active"] = str(
+                        user["alasan_non_active"]
+                    ).strip()
 
             resp.status = falcon.HTTP_200
             resp.media = {
@@ -534,11 +673,31 @@ class UserResource:
 
             print("ERROR UPDATE USER:", str(e))
 
-            # Tangkap khusus error FK constraint role_id supaya
-            # pesannya jelas ke frontend, bukan 500 generik
             error_text = str(e)
 
-            if "fk_user_role" in error_text or "foreign key constraint" in error_text.lower():
+            # =====================================================
+            # ERROR EMAIL DUPLIKAT
+            # =====================================================
+
+            if (
+                "duplicate" in error_text.lower()
+                and "email" in error_text.lower()
+            ):
+                resp.status = falcon.HTTP_409
+                resp.media = {
+                    "status": "error",
+                    "message": "Email sudah digunakan user lain"
+                }
+                return
+
+            # =====================================================
+            # ERROR FOREIGN KEY ROLE
+            # =====================================================
+
+            if (
+                "fk_user_role" in error_text
+                or "foreign key constraint" in error_text.lower()
+            ):
                 resp.status = falcon.HTTP_400
                 resp.media = {
                     "status": "error",
